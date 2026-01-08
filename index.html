@@ -100,6 +100,7 @@
 			padding: 10px;
 			background: #fdeaea;
 			border-radius: 6px;
+			border: 1px solid #f5c6cb;
 		}
 
 		#loading {
@@ -171,7 +172,6 @@
 			<div id="debug-log" style="white-space:pre-wrap; max-height:150px; overflow-y:auto;"></div>
 			<button onclick="copyDebugInfo()" style="margin-top:5px; font-size:0.8em; cursor:pointer;">ログをコピー</button>
 		</div>
-		<!-- 隠し診断表示用（URLに ?debug=1 をつけると表示されるようにする等も可能ですが、現状はdisplay:none） -->
 	</div>
 
 	<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -202,7 +202,6 @@
 					addLog('UserID取得失敗: 権限を再確認してください。');
 				}
 
-				// URLパラメータでデバッグモードを確認
 				const urlParams = new URLSearchParams(window.location.search);
 				if (urlParams.get('debug') === '1') {
 					document.getElementById('debug-container').style.display = 'block';
@@ -233,27 +232,16 @@
 			return '';
 		}
 
-		function addLog(m) {
+		const addLog = (m) => {
 			const el = document.getElementById('debug-log');
-			el.innerHTML += `[${new Date().toLocaleTimeString()}] ${m}\n`;
-		}
+			if (el) el.innerHTML += `[${new Date().toLocaleTimeString()}] ${m}\n`;
+		};
 
-		function showError(m) {
+		const showError = (m) => {
 			const el = document.getElementById('global-error');
-			el.innerText = m; el.style.display = 'block';
+			if (el) { el.innerText = m; el.style.display = 'block'; }
 			document.getElementById('loading').style.display = 'none';
-		}
-
-		function copyDebugInfo() {
-			const log = document.getElementById('debug-log').innerText;
-			const temp = document.createElement('textarea');
-			temp.value = "【LIFF診断ログ】\nURL: " + location.href + "\n" + log;
-			document.body.appendChild(temp);
-			temp.select();
-			document.execCommand('copy');
-			document.body.removeChild(temp);
-			alert('コピーしました。');
-		}
+		};
 
 		async function handleSubmit(e) {
 			e.preventDefault();
@@ -280,18 +268,45 @@
 				mode: mode
 			};
 
-			try {
-				const response = await fetch(GAS_API_URL, {
-					method: 'POST',
-					mode: 'no-cors',
-					body: JSON.stringify(payload),
-				});
-				alert('登録依頼を送信しました。アプリを閉じます。');
-				liff.closeWindow();
-			} catch (err) {
-				console.error('Submit Error:', err);
-				showError('送信中にエラーが発生しました: ' + err.message);
-			}
+			// JSONP によるリクエスト
+			jsonpRegister(payload);
+		}
+
+		/**
+		 * JSONPを利用してGASへデータを送信（エラー内容を取得可能にするため）
+		 */
+		function jsonpRegister(data) {
+			const callbackName = 'callback_' + Math.round(100000 * Math.random());
+			window[callbackName] = function (response) {
+				delete window[callbackName];
+				document.body.removeChild(script);
+
+				if (response.success) {
+					alert('登録が完了しました。');
+					liff.closeWindow();
+				} else {
+					showError('登録エラー: ' + response.message);
+				}
+			};
+
+			const script = document.createElement('script');
+			// doPostではなくdoGetを使うためにパラメータを構築
+			script.src = `${GAS_API_URL}?action=register&callback=${callbackName}&data=${encodeURIComponent(JSON.stringify(data))}`;
+			script.onerror = () => {
+				showError('通信エラーが発生しました。URL構成等をご確認ください。');
+			};
+			document.body.appendChild(script);
+		}
+
+		function copyDebugInfo() {
+			const log = document.getElementById('debug-log').innerText;
+			const temp = document.createElement('textarea');
+			temp.value = "【LIFF診断ログ】\nURL: " + location.href + "\n" + log;
+			document.body.appendChild(temp);
+			temp.select();
+			document.execCommand('copy');
+			document.body.removeChild(temp);
+			alert('コピーしました。');
 		}
 
 		init();
