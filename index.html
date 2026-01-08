@@ -29,6 +29,27 @@
 			margin-bottom: 20px;
 		}
 
+		.tab-group {
+			display: flex;
+			margin-bottom: 20px;
+			border-bottom: 2px solid #eee;
+		}
+
+		.tab {
+			flex: 1;
+			text-align: center;
+			padding: 10px;
+			cursor: pointer;
+			color: #999;
+			font-weight: bold;
+		}
+
+		.tab.active {
+			color: #007bff;
+			border-bottom: 2px solid #007bff;
+			margin-bottom: -2px;
+		}
+
 		.form-group {
 			margin-bottom: 15px;
 		}
@@ -50,6 +71,14 @@
 			font-size: 1em;
 		}
 
+		.section-title {
+			font-size: 0.8em;
+			color: #aaa;
+			text-transform: uppercase;
+			margin: 20px 0 10px;
+			border-bottom: 1px solid #eee;
+		}
+
 		.btn {
 			width: 100%;
 			padding: 14px;
@@ -61,10 +90,6 @@
 			font-weight: bold;
 			cursor: pointer;
 			margin-top: 10px;
-		}
-
-		.btn-success {
-			background: #28a745;
 		}
 
 		.error {
@@ -85,7 +110,7 @@
 		}
 
 		#debug-container {
-			display: block;
+			display: none;
 			margin-top: 20px;
 			padding: 10px;
 			background: #222;
@@ -100,8 +125,20 @@
 <body>
 	<div class="card">
 		<h1>檀家情報登録</h1>
+
+		<div class="tab-group">
+			<div id="tab-new" class="tab active" onclick="switchTab('new')">新規登録</div>
+			<div id="tab-link" class="tab" onclick="switchTab('link')">既存ID紐付け</div>
+		</div>
+
 		<div id="registration-content">
 			<form id="reg-form" onsubmit="handleSubmit(event)">
+				<div id="system-id-group" class="form-group" style="display:none;">
+					<label>システムID (12桁)</label>
+					<input type="text" id="systemId" placeholder="お手元の書類をご確認ください">
+				</div>
+
+				<div class="section-title">基本情報</div>
 				<div style="display:flex; gap:10px;">
 					<div class="form-group" style="flex:1;"><label>姓</label><input type="text" id="lastName" required>
 					</div>
@@ -114,6 +151,7 @@
 					<div class="form-group" style="flex:1;"><label>名（カナ）</label><input type="text" id="firstNameKana"
 							required></div>
 				</div>
+				<div class="section-title">連絡先</div>
 				<div class="form-group"><label>電話番号</label><input type="tel" id="tel" required></div>
 				<div class="form-group"><label>メールアドレス</label><input type="email" id="email" required></div>
 				<button type="submit" class="btn">登録する</button>
@@ -124,10 +162,16 @@
 		<div id="global-error" class="error"></div>
 
 		<div id="debug-container">
-			<div style="font-weight:bold; color:orange; margin-bottom:5px;">■診断レポート</div>
+			<div
+				style="font-weight:bold; color:orange; margin-bottom:5px; display:flex; justify-content:space-between;">
+				<span>■診断レポート</span>
+				<span onclick="document.getElementById('debug-container').style.display='none'"
+					style="cursor:pointer; color:#888;">[閉じる]</span>
+			</div>
 			<div id="debug-log" style="white-space:pre-wrap; max-height:150px; overflow-y:auto;"></div>
 			<button onclick="copyDebugInfo()" style="margin-top:5px; font-size:0.8em; cursor:pointer;">ログをコピー</button>
 		</div>
+		<!-- 隠し診断表示用（URLに ?debug=1 をつけると表示されるようにする等も可能ですが、現状はdisplay:none） -->
 	</div>
 
 	<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -138,6 +182,7 @@
 		const GAS_API_URL = "https://script.google.com/macros/s/AKfycbx6m2_NMDW3_S3oi7p2KcPtpT5u9_D3UlnR98HYk-iqUTcYvEz5iJHW_5aWSkSXfrom/exec";
 
 		let lineUserId = '';
+		let mode = 'new';
 
 		async function init() {
 			try {
@@ -156,10 +201,24 @@
 				} else {
 					addLog('UserID取得失敗: 権限を再確認してください。');
 				}
+
+				// URLパラメータでデバッグモードを確認
+				const urlParams = new URLSearchParams(window.location.search);
+				if (urlParams.get('debug') === '1') {
+					document.getElementById('debug-container').style.display = 'block';
+				}
 			} catch (e) {
 				addLog('初期化エラー: ' + e.message);
 				showError('LIFFの初期化に失敗しました。');
 			}
+		}
+
+		function switchTab(t) {
+			mode = t;
+			document.getElementById('tab-new').classList.toggle('active', t === 'new');
+			document.getElementById('tab-link').classList.toggle('active', t === 'link');
+			document.getElementById('system-id-group').style.display = t === 'link' ? 'block' : 'none';
+			document.getElementById('systemId').required = (t === 'link');
 		}
 
 		async function fetchId() {
@@ -217,21 +276,18 @@
 				tel: document.getElementById('tel').value,
 				email: document.getElementById('email').value,
 				lineUserId: lineUserId,
-				mode: 'new'
+				systemId: document.getElementById('systemId').value,
+				mode: mode
 			};
 
 			try {
-				// Fetch API を使用して GAS へ POST 送信
 				const response = await fetch(GAS_API_URL, {
 					method: 'POST',
-					mode: 'no-cors', // GASはCORSヘッダーを返さないため no-cors を指定
+					mode: 'no-cors',
 					body: JSON.stringify(payload),
 				});
-
-				// no-cors の場合、中身は読めませんが送信は成功します
 				alert('登録依頼を送信しました。アプリを閉じます。');
 				liff.closeWindow();
-
 			} catch (err) {
 				console.error('Submit Error:', err);
 				showError('送信中にエラーが発生しました: ' + err.message);
