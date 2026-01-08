@@ -30,11 +30,12 @@
 		}
 
 		.tab-group {
-			display: flex;
+			display: none;
 			margin-bottom: 20px;
 			border-bottom: 2px solid #eee;
 		}
 
+		/* 新規登録非表示につき非表示 */
 		.tab {
 			flex: 1;
 			text-align: center;
@@ -71,6 +72,11 @@
 			font-size: 1em;
 		}
 
+		input:read-only {
+			background-color: #f9f9f9;
+			color: #777;
+		}
+
 		.section-title {
 			font-size: 0.8em;
 			color: #aaa;
@@ -90,6 +96,39 @@
 			font-weight: bold;
 			cursor: pointer;
 			margin-top: 10px;
+		}
+
+		.btn-secondary {
+			background: #6c757d;
+			margin-top: 5px;
+			padding: 10px;
+			font-size: 0.9em;
+		}
+
+		.btn-scan {
+			background: #28a745;
+			margin-bottom: 15px;
+		}
+
+		.info-box {
+			background: #e9ecef;
+			padding: 15px;
+			border-radius: 8px;
+			margin-bottom: 15px;
+			display: none;
+			border-left: 4px solid #007bff;
+		}
+
+		.info-item {
+			font-size: 0.9em;
+			margin-bottom: 5px;
+		}
+
+		.info-label {
+			font-weight: bold;
+			color: #495057;
+			width: 80px;
+			display: inline-block;
 		}
 
 		.error {
@@ -127,19 +166,27 @@
 	<div class="card">
 		<h1>檀家情報登録</h1>
 
-		<div class="tab-group">
-			<div id="tab-new" class="tab active" onclick="switchTab('new')">新規登録</div>
-			<div id="tab-link" class="tab" onclick="switchTab('link')">既存ID紐付け</div>
-		</div>
-
 		<div id="registration-content">
+			<button class="btn btn-scan" onclick="handleScan()">QRコードを読み取る</button>
+
 			<form id="reg-form" onsubmit="handleSubmit(event)">
-				<div id="system-id-group" class="form-group" style="display:none;">
+				<div class="form-group">
 					<label>システムID (12桁)</label>
-					<input type="text" id="systemId" placeholder="お手元の書類をご確認ください">
+					<div style="display:flex; gap:5px;">
+						<input type="text" id="systemId" placeholder="IDを入力" required>
+						<button type="button" style="width:70px; padding:0;" class="btn btn-secondary"
+							onclick="handleInquiry()">照会</button>
+					</div>
 				</div>
 
-				<div class="section-title">基本情報</div>
+				<!-- 照会結果表示エリア -->
+				<div id="danka-info" class="info-box">
+					<div class="info-item"><span class="info-label">顧客CD:</span> <span id="res-cd"></span></div>
+					<div class="info-item"><span class="info-label">ｶﾅ:</span> <span id="res-kana"></span></div>
+					<div class="info-item"><span class="info-label">得意先名:</span> <span id="res-name"></span></div>
+				</div>
+
+				<div class="section-title">LINEに登録する情報</div>
 				<div style="display:flex; gap:10px;">
 					<div class="form-group" style="flex:1;"><label>姓</label><input type="text" id="lastName" required>
 					</div>
@@ -152,14 +199,12 @@
 					<div class="form-group" style="flex:1;"><label>名（カナ）</label><input type="text" id="firstNameKana"
 							required></div>
 				</div>
-				<div class="section-title">連絡先</div>
-				<div class="form-group"><label>電話番号</label><input type="tel" id="tel" required></div>
-				<div class="form-group"><label>メールアドレス</label><input type="email" id="email" required></div>
-				<button type="submit" class="btn">登録する</button>
+
+				<button type="submit" id="submit-btn" class="btn" style="display:none;">この内容で登録する</button>
 			</form>
 		</div>
 
-		<div id="loading">処理中...</div>
+		<div id="loading">通信中...</div>
 		<div id="global-error" class="error"></div>
 
 		<div id="debug-container">
@@ -170,143 +215,134 @@
 					style="cursor:pointer; color:#888;">[閉じる]</span>
 			</div>
 			<div id="debug-log" style="white-space:pre-wrap; max-height:150px; overflow-y:auto;"></div>
-			<button onclick="copyDebugInfo()" style="margin-top:5px; font-size:0.8em; cursor:pointer;">ログをコピー</button>
 		</div>
 	</div>
 
 	<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 	<script>
-		// --- 設定 ---
 		const LIFF_ID = "2008839253-KLrT6Xkx";
-		// GASのデプロイURL(/exec)をここに貼り付けてください
 		const GAS_API_URL = "https://script.google.com/macros/s/AKfycbx6m2_NMDW3_S3oi7p2KcPtpT5u9_D3UlnR98HYk-iqUTcYvEz5iJHW_5aWSkSXfrom/exec";
 
 		let lineUserId = '';
-		let mode = 'new';
 
 		async function init() {
 			try {
-				addLog('LIFF SDK 初期化中...');
 				await liff.init({ liffId: LIFF_ID });
-
-				if (!liff.isLoggedIn()) {
-					addLog('未ログイン: ログイン画面へリダイレクトします...');
-					liff.login();
-					return;
+				if (!liff.isLoggedIn()) { liff.login(); return; }
+				const ctx = liff.getContext();
+				lineUserId = ctx ? ctx.userId : '';
+				if (!lineUserId) {
+					const p = await liff.getProfile();
+					lineUserId = p.userId;
 				}
-
-				lineUserId = await fetchId();
-				if (lineUserId) {
-					addLog('UserID取得成功: ' + lineUserId);
-				} else {
-					addLog('UserID取得失敗: 権限を再確認してください。');
-				}
-
 				const urlParams = new URLSearchParams(window.location.search);
-				if (urlParams.get('debug') === '1') {
-					document.getElementById('debug-container').style.display = 'block';
-				}
+				if (urlParams.get('debug') === '1') document.getElementById('debug-container').style.display = 'block';
 			} catch (e) {
-				addLog('初期化エラー: ' + e.message);
-				showError('LIFFの初期化に失敗しました。');
+				showError('初期化失敗: ' + e.message);
 			}
 		}
 
-		function switchTab(t) {
-			mode = t;
-			document.getElementById('tab-new').classList.toggle('active', t === 'new');
-			document.getElementById('tab-link').classList.toggle('active', t === 'link');
-			document.getElementById('system-id-group').style.display = t === 'link' ? 'block' : 'none';
-			document.getElementById('systemId').required = (t === 'link');
-		}
-
-		async function fetchId() {
-			try {
-				const ctx = liff.getContext();
-				if (ctx && ctx.userId) { addLog('Context: OK'); return ctx.userId; }
-			} catch (e) { }
-			try {
-				const p = await liff.getProfile();
-				if (p && p.userId) { addLog('Profile: OK'); return p.userId; }
-			} catch (e) { addLog('Profile Err: ' + e.message); }
-			return '';
-		}
-
-		const addLog = (m) => {
+		function addLog(m) {
 			const el = document.getElementById('debug-log');
 			if (el) el.innerHTML += `[${new Date().toLocaleTimeString()}] ${m}\n`;
-		};
+		}
 
-		const showError = (m) => {
+		function showError(m) {
 			const el = document.getElementById('global-error');
-			if (el) { el.innerText = m; el.style.display = 'block'; }
+			el.innerText = m; el.style.display = 'block';
 			document.getElementById('loading').style.display = 'none';
-		};
+		}
 
-		async function handleSubmit(e) {
-			e.preventDefault();
-			if (!lineUserId) lineUserId = await fetchId();
-			if (!lineUserId) { alert('UserIDが取得できていません。'); return; }
-
-			if (GAS_API_URL.indexOf('http') !== 0) {
-				alert('GASのAPI URLが正しく設定されていません。ソースコード内の GAS_API_URL を確認してください。');
+		// QRスキャン機能
+		async function handleScan() {
+			if (!liff.isInClient()) {
+				alert('QRスキャンはLINEアプリ内で実行してください。');
 				return;
 			}
+			try {
+				const result = await liff.scanCodeV2();
+				if (result.value) {
+					document.getElementById('systemId').value = result.value;
+					handleInquiry(); // 自動照会
+				}
+			} catch (err) {
+				alert('スキャンエラー: ' + err.message);
+			}
+		}
+
+		// ID照会機能
+		async function handleInquiry() {
+			const sysId = document.getElementById('systemId').value;
+			if (!sysId || sysId.length < 12) { alert('12桁のシステムIDを入力してください。'); return; }
 
 			document.getElementById('loading').style.display = 'block';
 			document.getElementById('global-error').style.display = 'none';
+			document.getElementById('danka-info').style.display = 'none';
+			document.getElementById('submit-btn').style.display = 'none';
+
+			callGasApi({
+				action: 'inquiry',
+				systemId: sysId
+			}, (res) => {
+				document.getElementById('loading').style.display = 'none';
+				if (res.success) {
+					document.getElementById('res-cd').innerText = res.customerCd || '-';
+					document.getElementById('res-kana').innerText = res.kana || '-';
+					document.getElementById('res-name').innerText = res.name || '-';
+					document.getElementById('danka-info').style.display = 'block';
+					document.getElementById('submit-btn').style.display = 'block';
+				} else {
+					alert('照会エラー: ' + res.message);
+				}
+			});
+		}
+
+		async function handleSubmit(e) {
+			e.preventDefault();
+			if (!lineUserId) { alert('UserID取得不可。再起動してください。'); return; }
+
+			document.getElementById('loading').style.display = 'block';
 
 			const payload = {
 				lastName: document.getElementById('lastName').value,
 				firstName: document.getElementById('firstName').value,
 				lastNameKana: document.getElementById('lastNameKana').value,
 				firstNameKana: document.getElementById('firstNameKana').value,
-				tel: document.getElementById('tel').value,
-				email: document.getElementById('email').value,
 				lineUserId: lineUserId,
 				systemId: document.getElementById('systemId').value,
-				mode: mode
+				mode: 'link'
 			};
 
-			// JSONP によるリクエスト
-			jsonpRegister(payload);
-		}
-
-		/**
-		 * JSONPを利用してGASへデータを送信（エラー内容を取得可能にするため）
-		 */
-		function jsonpRegister(data) {
-			const callbackName = 'callback_' + Math.round(100000 * Math.random());
-			window[callbackName] = function (response) {
-				delete window[callbackName];
-				document.body.removeChild(script);
-
-				if (response.success) {
+			callGasApi({
+				action: 'register',
+				data: JSON.stringify(payload)
+			}, (res) => {
+				if (res.success) {
 					alert('登録が完了しました。');
 					liff.closeWindow();
 				} else {
-					showError('登録エラー: ' + response.message);
+					showError('登録エラー: ' + res.message);
 				}
+			});
+		}
+
+		// JSONP 通信の共通化 (通信エラー対策)
+		function callGasApi(params, callbackSuccess) {
+			const callbackName = 'cb_' + Math.round(100000 * Math.random());
+			window[callbackName] = (res) => {
+				delete window[callbackName];
+				document.body.removeChild(script);
+				callbackSuccess(res);
 			};
 
 			const script = document.createElement('script');
-			// doPostではなくdoGetを使うためにパラメータを構築
-			script.src = `${GAS_API_URL}?action=register&callback=${callbackName}&data=${encodeURIComponent(JSON.stringify(data))}`;
+			const query = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+			script.src = `${GAS_API_URL}?callback=${callbackName}&${query}`;
 			script.onerror = () => {
-				showError('通信エラーが発生しました。URL構成等をご確認ください。');
+				delete window[callbackName];
+				showError('通信エラーが発生しました。GASのデプロイ設定（全員に公開）を確認してください。');
 			};
 			document.body.appendChild(script);
-		}
-
-		function copyDebugInfo() {
-			const log = document.getElementById('debug-log').innerText;
-			const temp = document.createElement('textarea');
-			temp.value = "【LIFF診断ログ】\nURL: " + location.href + "\n" + log;
-			document.body.appendChild(temp);
-			temp.select();
-			document.execCommand('copy');
-			document.body.removeChild(temp);
-			alert('コピーしました。');
 		}
 
 		init();
