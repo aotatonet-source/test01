@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<base target="_top">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>檀家情報登録</title>
+	<style>
+		body {
+			font-family: 'Helvetica Neue', Arial, sans-serif;
+			background: #f4f7f6;
+			padding: 20px;
+			color: #333;
+		}
+
+		.card {
+			background: #fff;
+			padding: 30px;
+			border-radius: 16px;
+			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+			max-width: 500px;
+			margin: 0 auto;
+		}
+
+		h1 {
+			font-size: 1.5em;
+			text-align: center;
+			color: #2c3e50;
+			margin-bottom: 20px;
+		}
+
+		.form-group {
+			margin-bottom: 15px;
+		}
+
+		label {
+			display: block;
+			margin-bottom: 5px;
+			font-weight: bold;
+			color: #555;
+			font-size: 0.9em;
+		}
+
+		input {
+			width: 100%;
+			padding: 12px;
+			border: 1px solid #ddd;
+			border-radius: 8px;
+			box-sizing: border-box;
+			font-size: 1em;
+		}
+
+		.btn {
+			width: 100%;
+			padding: 14px;
+			background: #007bff;
+			color: #fff;
+			border: none;
+			border-radius: 8px;
+			font-size: 1em;
+			font-weight: bold;
+			cursor: pointer;
+			margin-top: 10px;
+		}
+
+		.btn-success {
+			background: #28a745;
+		}
+
+		.error {
+			color: #e74c3c;
+			font-size: 0.85em;
+			margin-top: 10px;
+			display: none;
+			padding: 10px;
+			background: #fdeaea;
+			border-radius: 6px;
+		}
+
+		#loading {
+			display: none;
+			text-align: center;
+			margin-top: 15px;
+			color: #007bff;
+		}
+
+		#debug-container {
+			display: block;
+			margin-top: 20px;
+			padding: 10px;
+			background: #222;
+			color: #0f0;
+			border-radius: 5px;
+			font-family: monospace;
+			font-size: 0.7em;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="card">
+		<h1>檀家情報登録</h1>
+		<div id="registration-content">
+			<form id="reg-form" onsubmit="handleSubmit(event)">
+				<div style="display:flex; gap:10px;">
+					<div class="form-group" style="flex:1;"><label>姓</label><input type="text" id="lastName" required>
+					</div>
+					<div class="form-group" style="flex:1;"><label>名</label><input type="text" id="firstName" required>
+					</div>
+				</div>
+				<div style="display:flex; gap:10px;">
+					<div class="form-group" style="flex:1;"><label>姓（カナ）</label><input type="text" id="lastNameKana"
+							required></div>
+					<div class="form-group" style="flex:1;"><label>名（カナ）</label><input type="text" id="firstNameKana"
+							required></div>
+				</div>
+				<div class="form-group"><label>電話番号</label><input type="tel" id="tel" required></div>
+				<div class="form-group"><label>メールアドレス</label><input type="email" id="email" required></div>
+				<button type="submit" class="btn">登録する</button>
+			</form>
+		</div>
+
+		<div id="loading">処理中...</div>
+		<div id="global-error" class="error"></div>
+
+		<div id="debug-container">
+			<div style="font-weight:bold; color:orange; margin-bottom:5px;">■診断レポート</div>
+			<div id="debug-log" style="white-space:pre-wrap; max-height:150px; overflow-y:auto;"></div>
+			<button onclick="copyDebugInfo()" style="margin-top:5px; font-size:0.8em; cursor:pointer;">ログをコピー</button>
+		</div>
+	</div>
+
+	<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+	<script>
+		// --- 設定 ---
+		const LIFF_ID = "2008839253-KLrT6Xkx";
+		// GASのデプロイURL(/exec)をここに貼り付けてください
+		const GAS_API_URL = "ここにGASのデプロイURL(/exec)を貼り付けてください";
+
+		let lineUserId = '';
+
+		async function init() {
+			try {
+				addLog('LIFF SDK 初期化中...');
+				await liff.init({ liffId: LIFF_ID });
+
+				if (!liff.isLoggedIn()) {
+					addLog('未ログイン: ログイン画面へリダイレクトします...');
+					liff.login();
+					return;
+				}
+
+				lineUserId = await fetchId();
+				if (lineUserId) {
+					addLog('UserID取得成功: ' + lineUserId);
+				} else {
+					addLog('UserID取得失敗: 権限を再確認してください。');
+				}
+			} catch (e) {
+				addLog('初期化エラー: ' + e.message);
+				showError('LIFFの初期化に失敗しました。');
+			}
+		}
+
+		async function fetchId() {
+			try {
+				const ctx = liff.getContext();
+				if (ctx && ctx.userId) { addLog('Context: OK'); return ctx.userId; }
+			} catch (e) { }
+			try {
+				const p = await liff.getProfile();
+				if (p && p.userId) { addLog('Profile: OK'); return p.userId; }
+			} catch (e) { addLog('Profile Err: ' + e.message); }
+			return '';
+		}
+
+		function addLog(m) {
+			const el = document.getElementById('debug-log');
+			el.innerHTML += `[${new Date().toLocaleTimeString()}] ${m}\n`;
+		}
+
+		function showError(m) {
+			const el = document.getElementById('global-error');
+			el.innerText = m; el.style.display = 'block';
+			document.getElementById('loading').style.display = 'none';
+		}
+
+		function copyDebugInfo() {
+			const log = document.getElementById('debug-log').innerText;
+			const temp = document.createElement('textarea');
+			temp.value = "【LIFF診断ログ】\nURL: " + location.href + "\n" + log;
+			document.body.appendChild(temp);
+			temp.select();
+			document.execCommand('copy');
+			document.body.removeChild(temp);
+			alert('コピーしました。');
+		}
+
+		async function handleSubmit(e) {
+			e.preventDefault();
+			if (!lineUserId) lineUserId = await fetchId();
+			if (!lineUserId) { alert('UserIDが取得できていません。'); return; }
+
+			if (GAS_API_URL.indexOf('http') !== 0) {
+				alert('GASのAPI URLが正しく設定されていません。ソースコード内の GAS_API_URL を確認してください。');
+				return;
+			}
+
+			document.getElementById('loading').style.display = 'block';
+			document.getElementById('global-error').style.display = 'none';
+
+			const payload = {
+				lastName: document.getElementById('lastName').value,
+				firstName: document.getElementById('firstName').value,
+				lastNameKana: document.getElementById('lastNameKana').value,
+				firstNameKana: document.getElementById('firstNameKana').value,
+				tel: document.getElementById('tel').value,
+				email: document.getElementById('email').value,
+				lineUserId: lineUserId,
+				mode: 'new'
+			};
+
+			try {
+				// Fetch API を使用して GAS へ POST 送信
+				const response = await fetch(GAS_API_URL, {
+					method: 'POST',
+					mode: 'no-cors', // GASはCORSヘッダーを返さないため no-cors を指定
+					body: JSON.stringify(payload),
+				});
+
+				// no-cors の場合、中身は読めませんが送信は成功します
+				alert('登録依頼を送信しました。アプリを閉じます。');
+				liff.closeWindow();
+
+			} catch (err) {
+				console.error('Submit Error:', err);
+				showError('送信中にエラーが発生しました: ' + err.message);
+			}
+		}
+
+		init();
+	</script>
+</body>
+
+</html>
