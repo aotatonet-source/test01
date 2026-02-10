@@ -161,10 +161,30 @@
 				<div class="form-group">
 					<label>システムID (12桁)</label>
 					<div style="display:flex; gap:5px;">
-						<input type="text" id="systemId" placeholder="IDを入力" required>
-						<button type="button" style="width:70px; padding:0;" class="btn btn-secondary"
-							onclick="handleInquiry()">照会</button>
+						<input type="text" id="systemId" placeholder="IDを入力">
 					</div>
+				</div>
+
+				<div style="text-align: center; margin: 10px 0; color: #888; font-size: 0.8em; position: relative;">
+					<span style="background: #fff; padding: 0 10px; z-index: 1; position: relative;">または</span>
+					<div
+						style="position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #eee; z-index: 0;">
+					</div>
+				</div>
+
+				<div style="display:flex; gap:10px;">
+					<div class="form-group" style="flex:1;">
+						<label>ｶﾅ (全角)</label>
+						<input type="text" id="inquiryKana" placeholder="サトウ　タロウ">
+					</div>
+					<div class="form-group" style="flex:1;">
+						<label>電話番号</label>
+						<input type="tel" id="inquiryTel" placeholder="090-1234-5678">
+					</div>
+				</div>
+
+				<div style="margin-bottom: 20px;">
+					<button type="button" class="btn btn-secondary" onclick="handleInquiry()">照会する</button>
 				</div>
 
 				<!-- 照会結果表示エリア -->
@@ -272,7 +292,17 @@
 		// ID照会機能
 		async function handleInquiry() {
 			const sysId = document.getElementById('systemId').value;
-			if (!sysId || sysId.length < 12) { alert('12桁のシステムIDを入力してください。'); return; }
+			const kana = document.getElementById('inquiryKana').value;
+			const tel = document.getElementById('inquiryTel').value;
+
+			if (!sysId && (!kana || !tel)) {
+				alert('システムID、または[ｶﾅと電話番号]を入力してください。');
+				return;
+			}
+			if (sysId && sysId.length < 12) {
+				alert('システムIDは12桁で入力してください。');
+				return;
+			}
 
 			document.getElementById('loading').style.display = 'block';
 			document.getElementById('global-error').style.display = 'none';
@@ -281,8 +311,12 @@
 
 			callGasApi({
 				action: 'inquiry',
-				payload: { systemId: sysId },
-				idToken: idToken // Optional for inquiry but good practice
+				payload: {
+					systemId: sysId,
+					kana: kana,
+					tel: tel
+				},
+				idToken: idToken
 			}, (res) => {
 				document.getElementById('loading').style.display = 'none';
 				if (res.success) {
@@ -291,6 +325,10 @@
 					document.getElementById('res-name').innerText = res.name || '-';
 					document.getElementById('danka-info').style.display = 'block';
 					document.getElementById('submit-btn').style.display = 'block';
+					// システムIDが空で照会した場合は、取得したIDをセットする
+					if (!sysId && res.systemId) {
+						document.getElementById('systemId').value = res.systemId;
+					}
 				} else {
 					alert('照会エラー: ' + res.message);
 				}
@@ -300,6 +338,8 @@
 		async function handleSubmit(e) {
 			e.preventDefault();
 			if (!lineUserId) { alert('UserID取得不可。再起動してください。'); return; }
+
+			if (!confirm('この内容で登録してよろしいですか？')) return;
 
 			document.getElementById('loading').style.display = 'block';
 
@@ -318,6 +358,7 @@
 				payload: payload,
 				idToken: idToken
 			}, (res) => {
+				document.getElementById('loading').style.display = 'none';
 				if (res.success) {
 					alert('登録が完了しました。');
 					liff.closeWindow();
@@ -353,16 +394,8 @@
 			try {
 				const response = await fetch(GAS_API_URL, {
 					method: 'POST',
-					// CORS mode 'no-cors' would be opaque, but GAS supports CORS if we rely on textOutput correctly.
-					// Actually GAS POST requests often have CORS issues if simple Content-Type is not used or if redirections happen.
-					// Standard way for GAS POST is using text/plain (or no content-type) to avoid preflight if possible, 
-					// but strictly we should try standard JSON. 
-					// However, GAS Web App often requires `redirect: "follow"` and handling the result.
-					// Let's try standard fetch.
 					headers: {
-						'Content-Type': 'application/x-www-form-urlencoded' // or text/plain. JSON triggers preflight which GAS might fail if not careful.
-						// SAFE BET: Use text/plain or x-www-form-urlencoded and parse body as string in GAS. 
-						// My Code.js `JSON.parse(e.postData.contents)` works with both usually if body is sent right.
+						'Content-Type': 'text/plain' // Use text/plain to avoid preflight (CORS safety)
 					},
 					body: JSON.stringify(data)
 				});
@@ -371,6 +404,8 @@
 				callbackSuccess(res);
 			} catch (err) {
 				console.error(err);
+				// "Failed to fetch" usually happens due to CORS or redirect issues with GAS.
+				// However, the main cause is often GAS not returning a valid JSON due to errors.
 				showError('通信エラー: ' + err.message);
 			}
 		}
