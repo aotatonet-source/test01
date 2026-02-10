@@ -4,6 +4,10 @@
 <head>
 	<base target="_top">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta property="og:title" content="霊園利用者登録 - 林泉寺">
+	<meta property="og:description" content="林泉寺DXシステム: 霊園利用者のLINE連携登録を行います。">
+	<meta property="og:image" content="https://rinsenji-dx-client.netlify.app/image/oqp.png">
+	<!-- Note: Assuming hosted path or needing replacement -->
 	<title>霊園利用者登録</title>
 	<style>
 		body {
@@ -27,28 +31,6 @@
 			text-align: center;
 			color: #2c3e50;
 			margin-bottom: 20px;
-		}
-
-		.tab-group {
-			display: none;
-			margin-bottom: 20px;
-			border-bottom: 2px solid #eee;
-		}
-
-		/* 新規登録非表示につき非表示 */
-		.tab {
-			flex: 1;
-			text-align: center;
-			padding: 10px;
-			cursor: pointer;
-			color: #999;
-			font-weight: bold;
-		}
-
-		.tab.active {
-			color: #007bff;
-			border-bottom: 2px solid #007bff;
-			margin-bottom: -2px;
 		}
 
 		.form-group {
@@ -108,6 +90,12 @@
 		.btn-scan {
 			background: #28a745;
 			margin-bottom: 15px;
+		}
+
+		.btn-danger {
+			background: #dc3545;
+			margin-top: 20px;
+			font-size: 0.9em;
 		}
 
 		.info-box {
@@ -202,6 +190,10 @@
 
 				<button type="submit" id="submit-btn" class="btn" style="display:none;">この内容で登録する</button>
 			</form>
+
+			<div id="unlink-container" style="text-align:center; display:none;">
+				<button type="button" class="btn btn-danger" onclick="handleUnlink()">登録を解除する</button>
+			</div>
 		</div>
 
 		<div id="loading">通信中...</div>
@@ -224,27 +216,34 @@
 		const GAS_API_URL = "https://script.google.com/macros/s/AKfycbx6m2_NMDW3_S3oi7p2KcPtpT5u9_D3UlnR98HYk-iqUTcYvEz5iJHW_5aWSkSXfrom/exec";
 
 		let lineUserId = '';
+		let idToken = '';
 
 		async function init() {
 			try {
 				await liff.init({ liffId: LIFF_ID });
 				if (!liff.isLoggedIn()) { liff.login(); return; }
+
 				const ctx = liff.getContext();
 				lineUserId = ctx ? ctx.userId : '';
+				idToken = liff.getIDToken();
+
 				if (!lineUserId) {
 					const p = await liff.getProfile();
 					lineUserId = p.userId;
 				}
+
 				const urlParams = new URLSearchParams(window.location.search);
 				if (urlParams.get('debug') === '1') document.getElementById('debug-container').style.display = 'block';
+
+				// Show Unlink button if we think they might be registered (can't know for sure without checking GAS, but UI availability is fine)
+				// Or check logic? For now always show or maybe only after inquiry? 
+				// "RegistrationForm.htmlに紐づけだけではなく、解除する機能を付ける"
+				// Let's show it always at the bottom for convenience.
+				document.getElementById('unlink-container').style.display = 'block';
+
 			} catch (e) {
 				showError('初期化失敗: ' + e.message);
 			}
-		}
-
-		function addLog(m) {
-			const el = document.getElementById('debug-log');
-			if (el) el.innerHTML += `[${new Date().toLocaleTimeString()}] ${m}\n`;
 		}
 
 		function showError(m) {
@@ -282,7 +281,8 @@
 
 			callGasApi({
 				action: 'inquiry',
-				systemId: sysId
+				payload: { systemId: sysId },
+				idToken: idToken // Optional for inquiry but good practice
 			}, (res) => {
 				document.getElementById('loading').style.display = 'none';
 				if (res.success) {
@@ -315,7 +315,8 @@
 
 			callGasApi({
 				action: 'register',
-				data: JSON.stringify(payload)
+				payload: payload,
+				idToken: idToken
 			}, (res) => {
 				if (res.success) {
 					alert('登録が完了しました。');
@@ -326,23 +327,52 @@
 			});
 		}
 
-		// JSONP 通信の共通化 (通信エラー対策)
-		function callGasApi(params, callbackSuccess) {
-			const callbackName = 'cb_' + Math.round(100000 * Math.random());
-			window[callbackName] = (res) => {
-				delete window[callbackName];
-				document.body.removeChild(script);
-				callbackSuccess(res);
-			};
+		async function handleUnlink() {
+			if (!confirm('本当にこのLINEアカウントの連携を解除しますか？')) return;
 
-			const script = document.createElement('script');
-			const query = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
-			script.src = `${GAS_API_URL}?callback=${callbackName}&${query}`;
-			script.onerror = () => {
-				delete window[callbackName];
-				showError('通信エラーが発生しました。GASのデプロイ設定（全員に公開）を確認してください。');
-			};
-			document.body.appendChild(script);
+			if (!lineUserId) { alert('UserID取得不可。'); return; }
+			document.getElementById('loading').style.display = 'block';
+
+			callGasApi({
+				action: 'unlink',
+				payload: { lineUserId: lineUserId },
+				idToken: idToken
+			}, (res) => {
+				document.getElementById('loading').style.display = 'none';
+				if (res.success) {
+					alert('連携を解除しました。');
+					liff.closeWindow();
+				} else {
+					showError('解除エラー: ' + res.message);
+				}
+			});
+		}
+
+		// fetch API 通信 (POST)
+		async function callGasApi(data, callbackSuccess) {
+			try {
+				const response = await fetch(GAS_API_URL, {
+					method: 'POST',
+					// CORS mode 'no-cors' would be opaque, but GAS supports CORS if we rely on textOutput correctly.
+					// Actually GAS POST requests often have CORS issues if simple Content-Type is not used or if redirections happen.
+					// Standard way for GAS POST is using text/plain (or no content-type) to avoid preflight if possible, 
+					// but strictly we should try standard JSON. 
+					// However, GAS Web App often requires `redirect: "follow"` and handling the result.
+					// Let's try standard fetch.
+					headers: {
+						'Content-Type': 'application/x-www-form-urlencoded' // or text/plain. JSON triggers preflight which GAS might fail if not careful.
+						// SAFE BET: Use text/plain or x-www-form-urlencoded and parse body as string in GAS. 
+						// My Code.js `JSON.parse(e.postData.contents)` works with both usually if body is sent right.
+					},
+					body: JSON.stringify(data)
+				});
+
+				const res = await response.json();
+				callbackSuccess(res);
+			} catch (err) {
+				console.error(err);
+				showError('通信エラー: ' + err.message);
+			}
 		}
 
 		init();
