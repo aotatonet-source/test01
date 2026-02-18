@@ -370,14 +370,23 @@
 		}
 
 		async function handleUnlink() {
-			if (!confirm('本当にこのLINEアカウントの連携を解除しますか？')) return;
+			const sysId = document.getElementById('systemId').value;
+			if (!sysId) {
+				alert('解除するシステムIDを入力してください。');
+				return;
+			}
+
+			if (!confirm(`システムID: ${sysId}\n本当にこのLINEアカウントの連携を解除しますか？`)) return;
 
 			if (!lineUserId) { alert('UserID取得不可。'); return; }
 			document.getElementById('loading').style.display = 'block';
 
 			callGasApi({
 				action: 'unlink',
-				payload: { lineUserId: lineUserId },
+				payload: { 
+					lineUserId: lineUserId,
+					systemId: sysId
+				},
 				idToken: idToken
 			}, (res) => {
 				document.getElementById('loading').style.display = 'none';
