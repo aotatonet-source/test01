@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 
+<!-- ============================================================================ -->
+<!-- head -->
+<!-- ============================================================================ -->
 <head>
 	<base target="_top" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,6 +13,10 @@
 	<meta property="og:image" content="https://aotatonet-source.github.io/test01/image/ogp.png" />
 	<!-- Note: Assuming hosted path or needing replacement -->
 	<title>霊園利用者登録</title>
+
+	<!-- ====================================== -->
+	<!-- style -->
+	<!-- ====================================== -->
 	<style>
 		body {
 			font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -151,6 +158,9 @@
 	</style>
 </head>
 
+<!-- ============================================================================ -->
+<!-- body -->
+<!-- ============================================================================ -->
 <body>
 	<div class="card">
 		<h1>霊園利用者登録</h1>
@@ -175,8 +185,8 @@
 
 				<div style="display:flex; gap:10px;">
 					<div class="form-group" style="flex:1;">
-						<label>ｶﾅ(半角)</label>
-						<input type="text" id="inquiryKana" placeholder="ｻﾄｳﾀﾛｳ">
+						<label>カナ(全角)</label>
+						<input type="text" id="inquiryKana" placeholder="サトウタロウ">
 					</div>
 					<div class="form-group" style="flex:1;">
 						<label>電話番号</label>
@@ -231,6 +241,9 @@
 		</div>
 	</div>
 
+	<!-- ====================================== -->
+	<!-- script -->
+	<!-- ====================================== -->
 	<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 	<script>
 		const LIFF_ID = "2008839253-KLrT6Xkx";
@@ -239,8 +252,13 @@
 		let lineUserId = '';
 		let idToken = '';
 
-		async function init() {
-			try {
+		/**
+		 * 初期化
+		 */
+		async function init()
+		{
+			try
+			{
 				await liff.init({ liffId: LIFF_ID });
 				if (!liff.isLoggedIn()) { liff.login(); return; }
 
@@ -248,7 +266,8 @@
 				lineUserId = ctx ? ctx.userId : '';
 				idToken = liff.getIDToken();
 
-				if (!lineUserId) {
+				if(!lineUserId)
+				{
 					const p = await liff.getProfile();
 					lineUserId = p.userId;
 				}
@@ -262,45 +281,71 @@
 				// Let's show it always at the bottom for convenience.
 				document.getElementById('unlink-container').style.display = 'block';
 
-			} catch (e) {
+			}
+			catch(e)
+			{
 				showError('初期化失敗: ' + e.message);
 			}
 		}
 
-		function showError(m) {
+		/**
+		 * エラー表示
+		 *
+		 * @param {string} m - 表示したい文字
+		 */
+		function showError(m)
+		{
 			const el = document.getElementById('global-error');
 			el.innerText = m; el.style.display = 'block';
 			document.getElementById('loading').style.display = 'none';
 		}
 
-		// QRスキャン機能
-		async function handleScan() {
-			if (!liff.isInClient()) {
+		/**
+		 * QRスキャン機能
+		 *
+		 */
+		async function handleScan()
+		{
+			if(!liff.isInClient())
+			{
 				alert('QRスキャンはLINEアプリ内で実行してください。');
 				return;
 			}
-			try {
+			try
+			{
 				const result = await liff.scanCodeV2();
-				if (result.value) {
+				if(result.value)
+				{
 					document.getElementById('systemId').value = result.value;
 					handleInquiry(); // 自動照会
 				}
-			} catch (err) {
+			}
+			catch(err)
+			{
 				alert('スキャンエラー: ' + err.message);
 			}
 		}
 
-		// ID照会機能
-		async function handleInquiry() {
+		/**
+		 * ID照会機能
+		 *
+		 */
+		async function handleInquiry()
+		{
 			const sysId = document.getElementById('systemId').value;
-			const kana = document.getElementById('inquiryKana').value;
+			const rawKana = document.getElementById('inquiryKana').value;
 			const tel = document.getElementById('inquiryTel').value;
 
-			if (!sysId && (!kana || !tel)) {
-				alert('システムID、または[ｶﾅと電話番号]を入力してください。');
+			// Convert full-width Kana to half-width for API
+			const kana = toHankakuKana(rawKana);
+
+			if(!sysId && (!kana || !tel))
+			{
+				alert('システムID、または[カナと電話番号]を入力してください。');
 				return;
 			}
-			if (sysId && sysId.length < 12) {
+			if(sysId && sysId.length < 12)
+			{
 				alert('システムIDは12桁で入力してください。');
 				return;
 			}
@@ -310,41 +355,60 @@
 			document.getElementById('danka-info').style.display = 'none';
 			document.getElementById('submit-btn').style.display = 'none';
 
-			callGasApi({
+			callGasApi(
+			{
 				action: 'inquiry',
-				payload: {
+				payload:
+				{
 					systemId: sysId,
 					kana: kana,
 					tel: tel
 				},
 				idToken: idToken
-			}, (res) => {
+			},
+			(res) =>
+			{
 				document.getElementById('loading').style.display = 'none';
-				if (res.success) {
+				if(res.success)
+				{
 					document.getElementById('res-cd').innerText = res.customerCd || '-';
 					document.getElementById('res-kana').innerText = res.kana || '-';
 					document.getElementById('res-name').innerText = res.name || '-';
 					document.getElementById('danka-info').style.display = 'block';
 					document.getElementById('submit-btn').style.display = 'block';
 					// システムIDが空で照会した場合は、取得したIDをセットする
-					if (!sysId && res.systemId) {
+					if(!sysId && res.systemId)
+					{
 						document.getElementById('systemId').value = res.systemId;
 					}
-				} else {
+				}
+				else
+				{
 					alert('照会エラー: ' + res.message);
 				}
 			});
 		}
 
-		async function handleSubmit(e) {
+		/**
+		 * 登録
+		 *
+		 * @param {event} [e] - ページ番号
+		 */
+		async function handleSubmit(e)
+		{
 			e.preventDefault();
-			if (!lineUserId) { alert('UserID取得不可。再起動してください。'); return; }
+			if(!lineUserId)
+			{
+				alert('UserID取得不可。再起動してください。');
+				return;
+			}
 
-			if (!confirm('この内容で登録してよろしいですか？')) return;
+			if(!confirm('この内容で登録してよろしいですか？')) return;
 
 			document.getElementById('loading').style.display = 'block';
 
-			const payload = {
+			const payload =
+			{
 				lastName: document.getElementById('lastName').value,
 				firstName: document.getElementById('firstName').value,
 				lastNameKana: document.getElementById('lastNameKana').value,
@@ -354,70 +418,113 @@
 				mode: 'link'
 			};
 
-			callGasApi({
+			callGasApi(
+			{
 				action: 'register',
 				payload: payload,
 				idToken: idToken
-			}, (res) => {
+			},
+			(res) =>
+			{
 				document.getElementById('loading').style.display = 'none';
-				if (res.success) {
+				if(res.success)
+				{
 					alert('登録が完了しました。');
 					liff.closeWindow();
-				} else {
+				}
+				else
+				{
 					showError('登録エラー: ' + res.message);
 				}
 			});
 		}
 
-		async function handleUnlink() {
+		/**
+		 * 解除
+		 *
+		 */
+		async function handleUnlink()
+		{
 			const sysId = document.getElementById('systemId').value;
-			if (!sysId) {
+			if(!sysId)
+			{
 				alert('解除するシステムIDを入力してください。');
 				return;
 			}
 
-			if (!confirm(`システムID: ${sysId}\n本当にこのLINEアカウントの連携を解除しますか？`)) return;
+			if(!confirm(`システムID: ${sysId}\n本当にこのLINEアカウントの連携を解除しますか？`)) return;
 
-			if (!lineUserId) { alert('UserID取得不可。'); return; }
+			if(!lineUserId)
+			{
+				alert('UserID取得不可。');
+				return;
+			}
 			document.getElementById('loading').style.display = 'block';
 
-			callGasApi({
+			callGasApi(
+			{
 				action: 'unlink',
-				payload: { 
+				payload:
+				{ 
 					lineUserId: lineUserId,
 					systemId: sysId
 				},
 				idToken: idToken
-			}, (res) => {
+			},
+			(res) =>
+			{
 				document.getElementById('loading').style.display = 'none';
-				if (res.success) {
+				if(res.success)
+				{
 					alert('連携を解除しました。');
 					liff.closeWindow();
-				} else {
+				}
+				else
+				{
 					showError('解除エラー: ' + res.message);
 				}
 			});
 		}
 
-		// fetch API 通信 (POST)
-		async function callGasApi(data, callbackSuccess) {
-			try {
-				const response = await fetch(GAS_API_URL, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'text/plain' // Use text/plain to avoid preflight (CORS safety)
-					},
-					body: JSON.stringify(data)
-				});
-
-				const res = await response.json();
-				callbackSuccess(res);
-			} catch (err) {
-				console.error(err);
-				// "Failed to fetch" usually happens due to CORS or redirect issues with GAS.
-				// However, the main cause is often GAS not returning a valid JSON due to errors.
-				showError('通信エラー: ' + err.message);
-			}
+		/**
+		 * fetch API 通信 (POST)
+		 *
+		 * @param {Object} data - 送信データ(JSON)
+		 * @param {Function} callbackSuccess - コールバック関数
+		 */
+		/**
+		 * 全角カナを半角カナに変換
+		 *
+		 * @param {string} str - 変換前の文字列
+		 * @returns {string} 変換後の文字列
+		 */
+		function toHankakuKana(str)
+		{
+			const kanaMap = {
+				'ガ': 'ｶﾞ', 'ギ': 'ｷﾞ', 'グ': 'ｸﾞ', 'ゲ': 'ｹﾞ', 'ゴ': 'ｺﾞ',
+				'ザ': 'ｻﾞ', 'ジ': 'ｼﾞ', 'ズ': 'ｽﾞ', 'ゼ': 'ｾﾞ', 'ゾ': 'ｿﾞ',
+				'ダ': 'ﾀﾞ', 'ヂ': 'ﾁﾞ', 'ヅ': 'ﾂﾞ', 'デ': 'ﾃﾞ', 'ド': 'ﾄﾞ',
+				'バ': 'ﾊﾞ', 'ビ': 'ﾋﾞ', 'ブ': 'ﾌﾞ', 'ベ': 'ﾍﾞ', 'ボ': 'ﾎﾞ',
+				'パ': 'ﾊﾟ', 'ピ': 'ﾋﾟ', 'プ': 'ﾌﾟ', 'ペ': 'ﾍﾟ', 'ポ': 'ﾎﾟ',
+				'ヴ': 'ｳﾞ', 'ヷ': 'ﾜﾞ', 'ヺ': 'ｦﾞ',
+				'ア': 'ｱ', 'イ': 'ｲ', 'ウ': 'ｳ', 'エ': 'ｴ', 'オ': 'ｵ',
+				'カ': 'ｶ', 'キ': 'ｷ', 'ク': 'ｸ', 'ケ': 'ｹ', 'コ': 'ｺ',
+				'サ': 'ｻ', 'シ': 'ｼ', 'ス': 'ｽ', 'セ': 'ｾ', 'ソ': 'ｿ',
+				'タ': 'ﾀ', 'チ': 'ﾁ', 'ツ': 'ﾂ', 'テ': 'ﾃ', 'ト': 'ﾄ',
+				'ナ': 'ﾅ', 'ニ': 'ﾆ', 'ヌ': 'ﾇ', 'ネ': 'ﾈ', 'ノ': 'ﾉ',
+				'ハ': 'ﾊ', 'ヒ': 'ﾋ', 'フ': 'ﾌ', 'ヘ': 'ﾍ', 'ホ': 'ﾎ',
+				'マ': 'ﾏ', 'ミ': 'ﾐ', 'ム': 'ﾑ', 'メ': 'ﾒ', 'モ': 'ﾓ',
+				'ヤ': 'ﾔ', 'ユ': 'ﾕ', 'ヨ': 'ﾖ',
+				'ラ': 'ﾗ', 'リ': 'ﾘ', 'ル': 'ﾙ', 'レ': 'ﾚ', 'ロ': 'ﾛ',
+				'ワ': 'ﾜ', 'ヲ': 'ｦ', 'ン': 'ﾝ',
+				'ァ': 'ｧ', 'ィ': 'ｨ', 'ゥ': 'ｩ', 'ェ': 'ｪ', 'ォ': 'ｵ',
+				'ッ': 'ｯ', 'ャ': 'ｬ', 'ュ': 'ｭ', 'ョ': 'ｮ',
+				'。': '｡', '、': '､', 'ー': 'ｰ', '「': '｢', '」': '｣', '・': '･'
+			};
+			const reg = new RegExp('(' + Object.keys(kanaMap).join('|') + ')', 'g');
+			return str.replace(reg, (match) => kanaMap[match])
+				.replace(/[！-～]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+				.replace(/　/g, ' ');
 		}
 
 		init();
