@@ -492,6 +492,32 @@
 		 * @param {Object} data - 送信データ(JSON)
 		 * @param {Function} callbackSuccess - コールバック関数
 		 */
+		async function callGasApi(data, callbackSuccess)
+		{
+			try
+			{
+				const response = await fetch(GAS_API_URL,
+				{
+					method: 'POST',
+					headers:
+					{
+						'Content-Type': 'text/plain' // Use text/plain to avoid preflight (CORS safety)
+					},
+					body: JSON.stringify(data)
+				});
+
+				const res = await response.json();
+				callbackSuccess(res);
+			}
+			catch(err)
+			{
+				console.error(err);
+				// "Failed to fetch" usually happens due to CORS or redirect issues with GAS.
+				// However, the main cause is often GAS not returning a valid JSON due to errors.
+				showError('通信エラー: ' + err.message);
+			}
+		}
+
 		/**
 		 * 全角カナを半角カナに変換
 		 *
